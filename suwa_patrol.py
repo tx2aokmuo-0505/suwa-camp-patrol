@@ -1,46 +1,166 @@
-name: Suwa Patrol
+import requests
+from bs4 import BeautifulSoup
+import os
+import random
+import time
 
-on:
-  schedule:
-    # 15分おきに実行する設定 (日本時間だと 00分, 15分, 30分, 45分)
-    - cron: '*/15 * * * *'
-  workflow_dispatch:      # GitHubの画面から手動で実行ボタンを押せるようにする
+# --- 【設定】 ---
+URL = "https://www.nap-camp.com/list?locationList=%5B137%2C138%2C139%2C140%2C141%2C142%2C143%2C144%2C120%2C121%2C122%2C123%2C124%2C125%2C126%2C127%2C128%2C129%2C130%2C131%2C132%2C133%2C134%2C135%2C136%2C165%2C166%2C167%2C168%2C169%2C170%5D&checkIn=2026-08-13&checkOut=2026-08-15&sortId=21"
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write    # 履歴ファイル(txt)を保存するために必要な権限
+# --- メッセージリスト (57個) ---
+ALL_MESSAGES = [
+    "☁️【報告】キャンプ場、突然“概念”になりました。触れられません。",
+    "☁️【報告】条件に合うキャンプ場、今は電波の向こう側で踊っています。接続不可。",
+    "☁️【報告】キャンプ場、あなたの条件を見て「また今度」と言い残し、光になりました。",
+    "☁️【報告】条件に合うキャンプ場、四次元ポケットに吸い込まれた可能性あり。ドラえもん待ち。",
+    "☁️【報告】キャンプ場、光になったけど戻り方を忘れたみたいです。",
+    "☁️【報告】キャンプ場が見つからなかったよ。Copilot「というわけで次の候補を100件ほど自動生成しておいたよ。全部条件外だけどね」",
+    "☁️【報告】候補地が急に“今日の運勢”を占い始め、検索結果が星座で埋まりました。",
+    "☁️【報告】ゼロ。でもあなたはバナナよりすごい。あと、バナナはすぐ黒くなる。あなたはならない。",
+    "☁️【報告】条件に合うキャンプ場、あなたの期待値を見て「荷が重い」と判断し逃走しました。",
+    "☁️【報告】キャンプ場は見つか——【別件】冷蔵庫の牛乳、賞味期限切れてます。",
+    "☁️ 404: camp not found　404：キャンプ場が見つかりません",
+    "☁️【報告】ゼロ。でも朗報です。あなたの検索熱量で、隣の家の晩ごはんがカレーであることが判明しました。隠し味はリンゴです。",
+    "☁️【報告】見つかりませんでした。その代わり、今あなたの脳内に「最高に美味しいマシュマロの焼き方」を直接ダウンロードしておきました。",
+    "☁️ ⚠️警告：条件に合うキャンプ場は、現在「伝説の生き物」として保護されており、一般の検索には表示されません。",
+    "☁️【報告】空きなし。キャンプ場は今、テントを張られるのが嫌すぎて、地面をデコボコにする作業に没頭しています。",
+    "☁️【報告】キャンプ場、突然「自分はただの土と草なのでは？」と哲学的な悩みに入り、予約受付を停止しました。",
+    "☁️【速報】空きなし。キャンプ場たちは今、お盆に向けて「虫を何匹増やすか」の会議中で忙しいようです。",
+    "☁️【報告】ゼロ。検索ボタンを押すたびに、あなたの脳内で「新しい焚き火台」を買うための言い訳が1つ生成されています。",
+    "☁️【最終報告】見つかりません。もういっそのこと、あなたが新しいキャンプ場を作ったほうが早いかもしれません。",
+    "☁️【報告】条件に合う場所はありません。なお、今のあなたの顔、キャンプに行きたすぎて少しだけ「薪」に似てきています。",
+    "☁️【事実】見つかりません。負けないで。キャンプに行かなければ撤収作業の絶望感を味わわずに済むのです。",
+    "☁️【内部情報】検索結果なし。キャンプ場たちは今、一斉に「雨乞い」の練習をしています。あなたに行かせたくないようです。",
+    "☁️【極秘】現在、キャンプ場はVIP（とても・いい・ポテト）専用となっており、ジャガイモ以外は予約できません。",
+    "☁️【報告】見つかりませんでした。キャンプ場は今、予約されるストレスで「ただの更地」になりたいと願っています。",
+    "☁️【報告】ゼロ。でも見てください。外の景色を。…あ、今スマホ見てるから見えませんね。失礼しました。",
+    "☁️【報告】ゼロ。でも朗報です。あなたの検索頻度が高すぎて、なっぷのサーバーがあなたのことを「親戚」だと認識し始めました。",
+    "☁️【内部告発】キャンプ場、実は空いているのですが、管理人さんが「今日は昼寝したい」という理由で非公開にしています（嘘です）。",
+    "☁️【報告】ゼロ。あまりに見つからないので、プログラムが気を利かせて「近所の公園でテントを張る許可」を市長に取りに行こうとしています。",
+    "☁️【報告】キャンプ場、突然「自分を予約できるのは、徳を積んだ者だけだ」と悟りを開き、ハードルを爆上げしました。",
+    "☁️【極秘】現在、キャンプ場は「透明人間専用サイト」となっております。一般の方には表示されません。",
+    "☁️【報告】ゼロ。あまりに空かないので、プログラムが「もう, 私がキャンプ場になります」と言い出しましたが、却下しました。",
+    "☁️【事実】見つかりません。でも、お盆にキャンプに行かないことで、あなたは「渋滞」という名の地獄を回避する権利を得ました。",
+    "☁️【予報】空きなし。でも安心してください。今、あなたの徳ポイントが加算されています。10,000貯まると奇跡が起きるかもしれません。",
+    "☁️【報告】キャンプ場、あなたの執念を察知して「現在、私は山ではなく巨大な抹茶ケーキである」という情報を流しています。",
+    "☁️【報告】ゼロ。あまりに見つからないので、AIが勝手にあなたの庭をドローンで測量し始めました。",
+    "☁️【報告】ゼロ。検索ボタンを叩くあなたのリズムが、偶然にも「雨乞いのダンス」と同じになっており、お盆の天気が心配です。",
+    "☁️【報告】キャンプ場、現在「なっぷ」のサーバー内で迷子中。見つけ次第、連れ戻します。",
+    "☁️【運勢】小吉。キャンプ場は見つかりませんが、今日中に「失くしたと思っていた予備のガス缶」が見つかります。",
+    "☁️【ラッキーアイテム】蚊取り線香。たとえキャンプに行けずとも、部屋で焚けばそこはもうベースキャンプです。",
+    "☁️　⚠️ System Warning: 現在、諏訪周辺の標高データがあなたの熱意により溶け出しています。",
+    "☁️　📡 Noise Interference: ザー……ザー……「こちら……諏訪……聞こえるか……湖で……焼きそばを……焼くんだ……」……通信が途絶しました。",
+    "☁️ 📉 Market Crash: キャンプ場の価値が暴騰し、現在1泊につき「魂の半分」または「一生分の薪」が必要になっています。",
+    "☁️ 勇者よ！ 今の装備（検索環境）では 諏訪の結界は 破れぬ！ 出直してくるのだ！",
+    "☁️【報告】あなたは「キャンプ場を 探す」を 唱えた！ しかし なにも おきなかった！",
+    "☁️ 宿屋の主人「お盆の間は 宿はどこも満室だよ。 お客さん、野宿のスキルはあるかい？」",
+    "☁️【警告】この先に 進むには 「予約確定メール」という 伝説のアイテムが 必要だ！",
+    "☁️「リスナーの皆さん、お盆の予約争奪戦、盛り上がってますねぇ。現在の諏訪、空きは……なし！ また15分後に会いましょう。」",
+    "☁️「今日のラッキーキャンプ飯は……『自宅で焼く冷凍餃子』です！ キャンプ場？ ありませんよ（笑）」",
+    "☁️【報告】キャンプ場、ついに「ツチノコ」と同等の希少価値に認定されました。",
+    "☁️【極秘】現在、キャンプ場は「妖精専用」となっております。身長10cm以上の方は予約できません。",
+    "☁️【声明】当キャンプ場は、現在「伝説の生き物・ツチノコ」の捜索本部となっているため、一般の方の宿泊を禁じています。",
+    "☁️【速報】キャンプ場、あまりに人気なので、いっそ「国」として独立することを検討し始めました。予約は入国審査制になります。",
+    "☁️【占い】大凶。キャンプ場は見つかりませんが、代わりに「昨日食べたはずのパンのカス」がズボンから見つかります。",
+    "☁️【前世】あなたの前世は「キャンプ場の管理人に予約を断られた旅人」でした。因縁は現世でも続いています。",
+    "☁️ I/O Error: 出力デバイス（テント）が入力デバイス（キャンプ場）と噛み合っていません。物理接続を確認してください。",
+    "☁️ Deadlock Detected: 「予約したいユーザー」と「空けないキャンプ場」が互いのリソースをロックし合い、処理が永久に止まりました。",
+    "☁️ Runtime Error: Unexpected_Reality: 予期せぬ「お盆の満室」が発生しました。例外処理（やけ食い）を実行します。"
+]
+
+def get_shogo(toku):
+    if toku < 20: return "中央道で諏訪ICを通り過ぎた人"
+    elif toku < 50: return "諏訪の迷い人"
+    elif toku < 100: return "迷える子羊級キャンパー"
+    elif toku < 150: return "【初級】ツルヤを「ちょっと品揃えの良い静鉄ストア」と崇める民"
+    elif toku < 200: return "諏訪湖一周（16km）を「ちょっとそこまで」と言い張る鉄人"
+    elif toku < 250: return "【中級】ハルピンラーメンを「諏訪の五味五味八珍」だと言い張るやつ"
+    elif toku < 300: return "御柱祭を「浜松まつり」より激しいと認めてしまった反逆者"
+    elif toku < 350: return "【特級】「20号バイパス」の完成を、リニアの開通より夢見るドリーマー"
+    elif toku < 400: return "諏訪湖の氷の上で「安倍川もち」を食べようとする強者"
+    elif toku < 450: return "「こっこ」を隠し持っているスパイ"
+    elif toku < 500: return "マイナス15度の蓼科で「半袖」を貫く狂戦士"
+    elif toku < 550: return "【要注意】ツルヤ廃人キャンパー"
+    elif toku < 600: return "鹿との対話者"
+    elif toku < 650: return "テント内氷点下チャレンジャー" 
+    elif toku < 700: return "熱湯風呂サバイバー"   
+    elif toku < 750: return "【禁忌】富士山を「裏側」から測る男"   
+    elif toku < 800: return "ビーナスラインの風になる"
+    elif toku < 850: return "【無法】「20号の渋滞」を愛し始めた仙人" 
+    elif toku < 900: return "【上級】バイパスの亡霊"
+    elif toku < 950: return "【極北】「御渡り（おわたり）」の判定員"
+    elif toku < 1000: return "八ヶ岳の精霊"
+    elif toku < 1050: return "【縄文回帰】黒曜石（オブシディアン）の魔術師"    
+    elif toku < 1100: return "凍結した諏訪湖の上をノーマルタイヤで走る無謀な守護霊"
+    else: return "⛩️ 諏訪大明神の化身 ⛩️"
+
+def get_and_update_status():
+    history_file = "sent_messages.txt"
+    msg_history_file = "message_history.txt"
     
-    steps:
-      # 1. あなたのリポジトリにあるコードを読み込む
-      - name: Checkout code
-        uses: actions/checkout@v4
+    if not os.path.exists(history_file):
+        with open(history_file, "w", encoding="utf-8") as f: pass
+    with open(history_file, "r", encoding="utf-8") as f:
+        count = len(f.readlines())
+    with open(history_file, "a", encoding="utf-8") as f:
+        f.write(f"{time.ctime()}\n")
+    
+    toku = (count + 1) * 2
+    sync_base = min(95.0, (toku / 10))
+    sync_rate = round(sync_base + random.uniform(-5.0, 5.0), 2)
+    sync_rate = max(0, min(100, sync_rate))
 
-      # 2. Pythonを使えるようにセットアップ
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-          cache: 'pip'
+    if not os.path.exists(msg_history_file):
+        with open(msg_history_file, "w", encoding="utf-8") as f: pass
+    
+    with open(msg_history_file, "r", encoding="utf-8") as f:
+        used_msgs = [line.strip() for line in f.readlines()]
+    
+    available_msgs = [m for m in ALL_MESSAGES if m not in used_msgs]
+    
+    if not available_msgs:
+        available_msgs = ALL_MESSAGES
+        with open(msg_history_file, "w", encoding="utf-8") as f: pass 
+    
+    selected_msg = random.choice(available_msgs)
+    
+    with open(msg_history_file, "a", encoding="utf-8") as f:
+        f.write(selected_msg + "\n")
+        
+    return toku, sync_rate, selected_msg
 
-      # 3. 必要なライブラリ(requests, bs4)をインストール
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+def send_discord(message):
+    if DISCORD_WEBHOOK_URL:
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
 
-      # 4. パトロールプログラムを実行
-      - name: Run script
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python suwa_patrol.py
+def main():
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"}
+    try:
+        response = requests.get(URL, headers=headers)
+        soup = BeautifulSoup(response.text, "html.parser")
+        camps = soup.select('section.c-item_card h3 a')
+        camp_names = list(set([camp.get_text(strip=True) for camp in camps]))
+        count = len(camp_names)
+    except Exception as e:
+        send_discord(f"⚠️ 諏訪パトロール中にシステムエラー: {e}")
+        return
 
-      # 5. 実行結果（パトロール回数やメッセージ履歴）を保存してリポジトリに反映
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add sent_messages.txt message_history.txt
-          git commit -m "Update patrol status [skip ci]" || exit 0
-          git push
+    if count > 0:
+        names_str = "\n・" + "\n・".join(camp_names)
+        msg = f"🌟【諏訪の結界、消失！】\n現在予約可能なキャンプ場は {count} 件です！\n{names_str}\n\n今すぐ御柱を立てに行く：\n{URL}"
+    else:
+        current_toku, sync_rate, selected_msg = get_and_update_status()
+        shogo = get_shogo(current_toku)
+        msg = (
+            f"{selected_msg}\n\n"
+            f"--- ⛩️ 諏訪パトロール・ステータス ---\n"
+            f"称号：【{shogo}】\n"
+            f"累計徳ポイント：{current_toku} pt\n"
+            f"諏訪大明神とのシンクロ率：{sync_rate}%"
+        )
+
+    send_discord(msg)
+
+if __name__ == "__main__":
+    main()
