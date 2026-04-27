@@ -1,46 +1,65 @@
+# ワークフロー（自動処理）の名前です
 name: Suwa Patrol
 
+# 実行するタイミングを決める設定
 on:
   schedule:
-    # 15分おきに実行する設定 (日本時間だと 00分, 15分, 30分, 45分)
+    # 15分おきに自動で実行する設定（GitHubの時間は世界標準時なので注意）
     - cron: '*/15 * * * *'
-  workflow_dispatch:      # GitHubの画面から手動で実行ボタンを押せるようにする
+  # GitHubのボタンから手動で実行できるようにする設定
+  workflow_dispatch:
+
+# ★追加ルール1：交通整理（多重起動防止）
+# 同時に2つ以上のパトロールが動いて記録がグチャグチャになるのを防ぐ
+concurrency:
+  group: suwa-patrol
+  cancel-in-progress: false
 
 jobs:
   build:
+    # ロボットを動かすための仮想パソコン（Ubuntu）を用意
     runs-on: ubuntu-latest
+    # パトロール結果（徳ポイントなど）をファイルに書き込む許可を与える
     permissions:
-      contents: write    # 履歴ファイル(txt)を保存するために必要な権限
+      contents: write
     
     steps:
-      # 1. あなたのリポジトリにあるコードを読み込む
+      # ステップ1：あなたの作ったプログラムファイルをロボットが読み込み
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Pythonを使えるようにセットアップ
+      # ステップ2：Pythonというプログラミング言語を使えるようにセットアップ
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
           cache: 'pip'
 
-      # 3. 必要なライブラリ(requests, bs4)をインストール
+      # ステップ3：requestsやbeautifulsoup4などの「必要な道具」をインストール
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. パトロールプログラムを実行
+      # ステップ4：【メイン業務】Pythonプログラムを動かしてパトロール開始！
       - name: Run script
         env:
+          # DiscordのURLを安全にプログラムへ渡す
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python suwa_patrol.py
 
-      # 5. 実行結果（パトロール回数やメッセージ履歴）を保存してリポジトリに反映
+      # ★追加ルール2：記録の確実な保存
+      # 増えた徳ポイントや送信履歴を、あなたのリポジトリに保存（上書き）
       - name: Commit and push changes
         run: |
+          # ロボットが「自分が書き込みますよ」と名乗るための設定
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          # 他の処理と衝突しないよう、最新の状態を確認して合体（リベース）させます
+          git pull origin main --rebase
+          # 変更があったファイル（履歴・ポイント）を保存対象に追加
           git add sent_messages.txt message_history.txt
+          # 「パトロール完了！」というメモを残して確定させます
           git commit -m "Update patrol status [skip ci]" || exit 0
+          # ともえにGitHubへデータを送信して完了！
           git push
