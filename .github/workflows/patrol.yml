@@ -26,7 +26,9 @@ jobs:
       # ステップ1：GitHubから最新のプログラムファイルを取り寄せます
       - name: 🛰️ ファイルの読み込み
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0  # ← これを追加！「記憶のすべて」を読み込みます
+          
       # ステップ2：Python（プログラミング言語）を使えるようにセットアップします
       - name: 🐍 Pythonの準備
         uses: actions/setup-python@v5
