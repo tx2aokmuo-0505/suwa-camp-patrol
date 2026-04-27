@@ -1,65 +1,68 @@
-# ワークフロー（自動処理）の名前です
+# この自動処理の名前です
 name: Suwa Patrol
 
-# 実行するタイミングを決める設定
+# 実行されるタイミングの設定
 on:
   schedule:
-    # 15分おきに自動で実行する設定（GitHubの時間は世界標準時なので注意）
+    # 15分おきに自動でパトロールを開始します
     - cron: '*/15 * * * *'
-  # GitHubのボタンから手動で実行できるようにする設定
+  # GitHubのボタンから手動でいつでも動かせるようにします
   workflow_dispatch:
 
-# ★追加ルール1：交通整理（多重起動防止）
-# 同時に2つ以上のパトロールが動いて記録がグチャグチャになるのを防ぐ
+# ★渋滞防止：パトロールカーが2台同時に出動して事故るのを防ぎます
 concurrency:
   group: suwa-patrol
   cancel-in-progress: false
 
 jobs:
   build:
-    # ロボットを動かすための仮想パソコン（Ubuntu）を用意
+    # ロボットを動かすためのサーバー（仮想PC）を準備します
     runs-on: ubuntu-latest
-    # パトロール結果（徳ポイントなど）をファイルに書き込む許可を与える
+    # ロボットに「ファイルを書き換える（徳ptを保存する）」許可を与えます
     permissions:
       contents: write
     
     steps:
-      # ステップ1：あなたの作ったプログラムファイルをロボットが読み込み
-      - name: Checkout code
+      # ステップ1：GitHubから最新のプログラムファイルを取り寄せます
+      - name: 🛰️ ファイルの読み込み
         uses: actions/checkout@v4
 
-      # ステップ2：Pythonというプログラミング言語を使えるようにセットアップ
-      - name: Set up Python
+      # ステップ2：Python（プログラミング言語）を使えるようにセットアップします
+      - name: 🐍 Pythonの準備
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
           cache: 'pip'
 
-      # ステップ3：requestsやbeautifulsoup4などの「必要な道具」をインストール
-      - name: Install dependencies
+      # ステップ3：パトロールに必要な道具（ライブラリ）をインストールします
+      - name: 📦 道具のインストール
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ステップ4：【メイン業務】Pythonプログラムを動かしてパトロール開始！
-      - name: Run script
+      # ステップ4：【メイン業務】パトロールを実行して、Discordに報告を送ります
+      - name: 🕵️ パトロール中！
         env:
-          # DiscordのURLを安全にプログラムへ渡す
+          # Discordの送り先（秘密の鍵）を安全に読み込んでいます
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python suwa_patrol.py
 
-      # ★追加ルール2：記録の確実な保存
-      # 増えた徳ポイントや送信履歴を、あなたのリポジトリに保存（上書き）
-      - name: Commit and push changes
+      # ステップ5：増えた徳ポイントや履歴を、大切に金庫へ保存します
+      - name: 📝 結果を保存して金庫に戻す
         run: |
-          # ロボットが「自分が書き込みますよ」と名乗るための設定
+          # ロボットの名前とメールアドレスを設定（保存時に必要です）
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # 他の処理と衝突しないよう、最新の状態を確認して合体（リベース）させます
-          git pull origin main --rebase
-          # 変更があったファイル（履歴・ポイント）を保存対象に追加
+          
+          # 変更された「履歴ファイル」を保存の準備リストに入れます
           git add sent_messages.txt message_history.txt
-          # 「パトロール完了！」というメモを残して確定させます
+          
+          # 「パトロール完了！」というメモと共に保存を確定させます
+          # （もし変更がなくてもエラーにならないように設定しています）
           git commit -m "Update patrol status [skip ci]" || exit 0
-          # ともえにGitHubへデータを送信して完了！
+          
+          # 保存する前に、ネット上の金庫（GitHub）に最新のデータがないか確認して合体させます
+          git pull origin main --rebase
+          
+          # 最後に、あなたのGitHubリポジトリへデータを送信します
           git push
